@@ -6,7 +6,7 @@ from flask import Flask
 import telebot
 from telebot import types
 
-# 1. Міні-сервер для Render (щоб тримати порт відкритим безкоштовно)
+# 1. Міні-сервер для Render (щоб тримати порт відкритим)
 app = Flask('')
 
 
@@ -47,16 +47,20 @@ def save_json(filename, data):
     json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-# 3. Головне меню з трьома кнопками знизу
+# 3. Команда /start з інлайн-кнопками всередині повідомлення
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-  markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-  btn1 = types.KeyboardButton('🔑 Отримати код авторизації для ПК')
-  btn2 = types.KeyboardButton('➕ Додати транзакцію')
-  btn3 = types.KeyboardButton('📊 Переглянути прибуток')
-  markup.add(btn1)
-  markup.add(btn2)
-  markup.add(btn3)
+  markup = types.InlineKeyboardMarkup(row_width=1)
+  btn1 = types.InlineKeyboardButton(
+      '🔑 Отримати код авторизації для ПК', callback_data='btn_key'
+  )
+  btn2 = types.InlineKeyboardButton(
+      '➕ Додати транзакцію', callback_data='btn_add'
+  )
+  btn3 = types.InlineKeyboardButton(
+      '📊 Переглянути прибуток', callback_data='btn_profit'
+  )
+  markup.add(btn1, btn2, btn3)
 
   bot.send_message(
       message.chat.id,
@@ -65,67 +69,69 @@ def send_welcome(message):
   )
 
 
-# 4. Обробка натискань на кнопки та повідомлень
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-  user_id = str(message.chat.id)
+# 4. Обробка натискань на інлайн-кнопки
+@bot.callback_query_handler(func=lambda call: True)
+def callback_inline(call):
+  user_id = str(call.message.chat.id)
 
-  if message.text == '🔑 Отримати код авторизації для ПК':
+  if call.data == 'btn_key':
     code = random.randint(100000, 999999)
     keys_data = load_json('user_keys.json')
     keys_data[user_id] = code
     save_json('user_keys.json', keys_data)
 
     bot.send_message(
-        message.chat.id,
+        call.message.chat.id,
         f'🔑 Ваш код для входу в програму на ПК: <code>{code}</code>\n\nВведіть'
         ' цей код у вікні програми при першому запуску.',
         parse_mode='HTML',
     )
 
-  elif message.text == '➕ Додати транзакцію':
+  elif call.data == 'btn_add':
     bot.send_message(
-        message.chat.id,
+        call.message.chat.id,
         'Введіть суму та опис через пробіл\nНаприклад: 1500 Купівля деталей',
     )
 
-  elif message.text == '📊 Переглянути прибуток':
+  elif call.data == 'btn_profit':
     finance_data = load_json('finance_data.json')
     bot.send_message(
-        message.chat.id,
+        call.message.chat.id,
         f'📊 Ваші збережені дані:\n<code>{json.dumps(finance_data, ensure_ascii=False, indent=2)}</code>',
         parse_mode='HTML',
     )
 
-  else:
-    # Збереження введеної транзакції
-    parts = message.text.split(' ', 1)
-    try:
-      amount = float(parts[0])
-      description = parts[1] if len(parts) > 1 else 'Загальне'
 
-      finance_data = load_json('finance_data.json')
-      # Додаємо у файл поточні дані
-      trans_list = finance_data.get(user_id, [])
-      if not isinstance(trans_list, list):
-        trans_list = []
+# 5. Обробка введення суми для транзакцій (якщо користувач просто пише текст)
+@bot.message_handler(func=lambda message: True)
+def handle_text(message):
+  user_id = str(message.chat.id)
+  parts = message.text.split(' ', 1)
+  try:
+    amount = float(parts[0])
+    description = parts[1] if len(parts) > 1 else 'Загальне'
 
-      trans_list.append({'amount': amount, 'description': description})
-      finance_data[user_id] = trans_list
-      save_json('finance_data.json', finance_data)
+    finance_data = load_json('finance_data.json')
+    trans_list = finance_data.get(user_id, [])
+    if not isinstance(trans_list, list):
+      trans_list = []
 
-      sign_str = f'+{amount:.2f}' if amount >= 0 else f'{amount:.2f}'
-      bot.send_message(
-          message.chat.id,
-          '✅ Успішно збережено!\n\n📂 Машина -> Загальне\n📝 Додано з'
-          f' Telegram: {sign_str} грн',
-      )
-    except ValueError:
-      bot.send_message(
-          message.chat.id,
-          '⚠️ Введіть суму та опис через пробіл (наприклад: 1500 Купівля'
-          ' деталей)',
-      )
+    trans_list.append({'amount': amount, 'description': description})
+    finance_data[user_id] = trans_list
+    save_json('finance_data.json', finance_data)
+
+    sign_str = f'+{amount:.2f}' if amount >= 0 else f'{amount:.2f}'
+    bot.send_message(
+        message.chat.id,
+        '✅ Успішно збережено!\n\n📂 Машина -> Загальне\n📝 Додано з'
+        f' Telegram: {sign_str} грн',
+    )
+  except ValueError:
+    bot.send_message(
+        message.chat.id,
+        '⚠️ Скористайтесь кнопками меню вище або введіть суму та опис через'
+        ' пробіл (наприклад: 1500 Купівля деталей)',
+    )
 
 
 if __name__ == '__main__':
