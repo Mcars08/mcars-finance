@@ -79,15 +79,13 @@ def handle_message(message):
     keys_data[user_id] = code
     save_json('user_keys.json', keys_data)
 
+    # Повідомлення в чаті тепер каже тільки те, що код надіслано в системне сховище (або приховано)
     bot.send_message(
         message.chat.id,
-        f'🔑 Ваш код для входу в програму на ПК: <code>{code}</code>\n\nВведіть'
-        ' цей код у вікні програми при першому запуску.',
-        parse_mode='HTML',
+        '🔑 Код авторизації для ПК успішно згенеровано та збережено у файл!',
     )
 
   elif message.text == '➕ Додати транзакцію':
-    # Виводимо інлайн-кнопки вибору категорії (як на скріншоті)
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton('Машина', callback_data='cat_Машина'),
@@ -117,18 +115,16 @@ def handle_message(message):
     bot.send_message(message.chat.id, text)
 
   else:
-    # Перевіряємо, чи користувач очікує введення суми транзакції
     if user_id in user_state and user_state[user_id].get('step') == 'waiting_amount':
       data = user_state[user_id]
       category = data['category']
-      op_type = data['type']  # '+' або '-'
+      op_type = data['type']
 
       parts = message.text.split(' ', 1)
       try:
         amount = float(parts[0])
         description = parts[1] if len(parts) > 1 else 'Загальне'
 
-        # Зберігаємо у файл finance_data.json
         finance_data = load_json('finance_data.json')
         if user_id not in finance_data:
           finance_data[user_id] = {'income': 0.0, 'expense': 0.0}
@@ -147,7 +143,6 @@ def handle_message(message):
             '✅ Успішно збережено!\n\n📂 '
             f'{category} -> {description}\n📝 Додано з Telegram: {sign_str} грн',
         )
-        # Очищаємо стан
         del user_state[user_id]
       except ValueError:
         bot.send_message(
@@ -161,7 +156,7 @@ def handle_message(message):
       )
 
 
-# 5. Обробка натискань на інлайн-кнопки (Категорії та типи операцій)
+# 5. Обробка натискань на інлайн-кнопки
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
   user_id = str(call.message.chat.id)
@@ -170,7 +165,6 @@ def callback_inline(call):
     category = call.data.split('_')[1]
     user_state[user_id] = {'category': category}
 
-    # Показуємо меню вибору типу операції з назвою обраної категорії
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton('➕ Дохід (+)', callback_data='op_plus'),
