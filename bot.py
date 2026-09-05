@@ -47,19 +47,13 @@ def save_json(filename, data):
     json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-# 3. Команда /start з кнопками всередині повідомлення
+# 3. Головне меню знизу
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-  markup = types.InlineKeyboardMarkup()
-  btn1 = types.InlineKeyboardButton(
-      '🔑 Отримати код авторизації для ПК', callback_data='get_key'
-  )
-  btn2 = types.InlineKeyboardButton(
-      '➕ Додати транзакцію', callback_data='add_transaction'
-  )
-  btn3 = types.InlineKeyboardButton(
-      '📊 Переглянути прибуток', callback_data='view_profit'
-  )
+  markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+  btn1 = types.KeyboardButton('🔑 Отримати код авторизації для ПК')
+  btn2 = types.KeyboardButton('➕ Додати транзакцію')
+  btn3 = types.KeyboardButton('📊 Переглянути прибуток')
   markup.add(btn1)
   markup.add(btn2)
   markup.add(btn3)
@@ -71,12 +65,12 @@ def send_welcome(message):
   )
 
 
-# 4. Обробка натискань на кнопки всередині повідомлення
-@bot.callback_query_handler(func=lambda call: True)
-def callback_inline(call):
-  user_id = str(call.message.chat.id)
+# 4. Обробка кнопок знизу
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+  user_id = str(message.chat.id)
 
-  if call.data == 'get_key':
+  if message.text == '🔑 Отримати код авторизації для ПК':
     code = random.randint(100000, 999999)
 
     keys_data = load_json('user_keys.json')
@@ -84,24 +78,36 @@ def callback_inline(call):
     save_json('user_keys.json', keys_data)
 
     bot.send_message(
-        call.message.chat.id,
+        message.chat.id,
         f'🔑 Ваш код для входу в програму на ПК: <code>{code}</code>\n\nВведіть'
         ' цей код у вікні програми при першому запуску.',
         parse_mode='HTML',
     )
 
-  elif call.data == 'add_transaction':
+  elif message.text == '➕ Додати транзакцію':
     bot.send_message(
-        call.message.chat.id,
+        message.chat.id,
         'Введіть суму та опис через пробіл (наприклад: 1500 Купівля деталей)',
     )
 
-  elif call.data == 'view_profit':
+  elif message.text == '📊 Переглянути прибуток':
     finance_data = load_json('finance_data.json')
+    # Можеш змінити підрахунок під свою структуру даних, якщо потрібно
+    income = finance_data.get('income', 0.00)
+    expense = finance_data.get('expense', 0.00)
+    profit = income - expense
+
+    text = (
+        '📊 ВАШ ОСОБИСТИЙ БАЛАНС:\n\n'
+        f'🟢 Доходи: {income:.2f} грн\n'
+        f'🔴 Витрати: {expense:.2f} грн\n'
+        f'💰 Чистий прибуток: {profit:.2f} грн'
+    )
+    bot.send_message(message.chat.id, text)
+
+  else:
     bot.send_message(
-        call.message.chat.id,
-        f'📊 Ваші збережені дані:\n<code>{finance_data}</code>',
-        parse_mode='HTML',
+        message.chat.id, 'Скористайтесь кнопками меню нижче 👇'
     )
 
 
