@@ -30,11 +30,11 @@ keep_alive()
 TOKEN = '8996181218:AAELaCNDCti2hWlr0sFeSuZbZmLeLHCbfP4'
 bot = telebot.TeleBot(TOKEN)
 
-# Тимчасовий словник для збереження вибору користувача
+# Словник для збереження поточного кроку користувача
 user_state = {}
 
 
-# Функції для роботи з файлами JSON
+# Функції для роботи з JSON файлами
 def load_json(filename):
   if os.path.exists(filename):
     with open(filename, 'r', encoding='utf-8') as f:
@@ -50,7 +50,7 @@ def save_json(filename, data):
     json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-# 3. Головне меню знизу
+# 3. Головне меню (кнопки знизу)
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -68,7 +68,7 @@ def send_welcome(message):
   )
 
 
-# 4. Обробка кнопок знизу
+# 4. Обробка текстових повідомлень та кнопок знизу
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
   user_id = str(message.chat.id)
@@ -87,22 +87,23 @@ def handle_message(message):
     )
 
   elif message.text == '➕ Додати транзакцію':
-    # Вибір категорії кнопками в повідомленні
+    # Виводимо інлайн-кнопки вибору категорії (як на скріншоті)
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton('Машина', callback_data='cat_Машина'),
         types.InlineKeyboardButton('Бізнес', callback_data='cat_Бізнес'),
         types.InlineKeyboardButton('Крипта', callback_data='cat_Крипта'),
         types.InlineKeyboardButton('Покупки', callback_data='cat_Покупки'),
-        types.InlineKeyboardButton('Подорожі', callback_data='cat_Подорожі'),
     )
+    markup.add(types.InlineKeyboardButton('Подорожі', callback_data='cat_Подорожі'))
+
     bot.send_message(
         message.chat.id, 'Оберіть категорію:', reply_markup=markup
     )
 
   elif message.text == '📊 Переглянути прибуток':
     finance_data = load_json('finance_data.json')
-    user_fin = finance_data.get(user_id, {})
+    user_fin = finance_data.get(user_id, {'income': 0.0, 'expense': 0.0})
     income = user_fin.get('income', 0.00)
     expense = user_fin.get('expense', 0.00)
     profit = income - expense
@@ -116,7 +117,7 @@ def handle_message(message):
     bot.send_message(message.chat.id, text)
 
   else:
-    # Перевіряємо, чи користувач вводить суму транзакції
+    # Перевіряємо, чи користувач очікує введення суми транзакції
     if user_id in user_state and user_state[user_id].get('step') == 'waiting_amount':
       data = user_state[user_id]
       category = data['category']
@@ -127,7 +128,7 @@ def handle_message(message):
         amount = float(parts[0])
         description = parts[1] if len(parts) > 1 else 'Загальне'
 
-        # Зберігаємо у finance_data.json
+        # Зберігаємо у файл finance_data.json
         finance_data = load_json('finance_data.json')
         if user_id not in finance_data:
           finance_data[user_id] = {'income': 0.0, 'expense': 0.0}
@@ -146,11 +147,12 @@ def handle_message(message):
             '✅ Успішно збережено!\n\n📂 '
             f'{category} -> {description}\n📝 Додано з Telegram: {sign_str} грн',
         )
+        # Очищаємо стан
         del user_state[user_id]
       except ValueError:
         bot.send_message(
             message.chat.id,
-            '⚠️ Будь ласка, введіть суму коректно (наприклад: 1500 Купівля'
+            '⚠️ Будь ласка, введіть суму та опис коректно (наприклад: 1500 Купівля'
             ' деталей або просто 500)',
         )
     else:
@@ -159,7 +161,7 @@ def handle_message(message):
       )
 
 
-# 5. Обробка Inline-кнопок (категорії та типи операцій)
+# 5. Обробка натискань на інлайн-кнопки (Категорії та типи операцій)
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
   user_id = str(call.message.chat.id)
@@ -168,7 +170,7 @@ def callback_inline(call):
     category = call.data.split('_')[1]
     user_state[user_id] = {'category': category}
 
-    # Показуємо кнопки вибору типу операції
+    # Показуємо меню вибору типу операції з назвою обраної категорії
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton('➕ Дохід (+)', callback_data='op_plus'),
