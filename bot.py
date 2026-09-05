@@ -30,6 +30,9 @@ keep_alive()
 TOKEN = '8996181218:AAELaCNDCti2hWlr0sFeSuZbZmLeLHCbfP4'
 bot = telebot.TeleBot(TOKEN)
 
+# Тимчасовий словник для збереження вибору користувача
+user_state = {}
+
 
 # Функції для роботи з файлами JSON
 def load_json(filename):
@@ -72,7 +75,6 @@ def handle_message(message):
 
   if message.text == '🔑 Отримати код авторизації для ПК':
     code = random.randint(100000, 999999)
-
     keys_data = load_json('user_keys.json')
     keys_data[user_id] = code
     save_json('user_keys.json', keys_data)
@@ -85,16 +87,24 @@ def handle_message(message):
     )
 
   elif message.text == '➕ Додати транзакцію':
+    # Вибір категорії кнопками в повідомленні
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton('Машина', callback_data='cat_Машина'),
+        types.InlineKeyboardButton('Бізнес', callback_data='cat_Бізнес'),
+        types.InlineKeyboardButton('Крипта', callback_data='cat_Крипта'),
+        types.InlineKeyboardButton('Покупки', callback_data='cat_Покупки'),
+        types.InlineKeyboardButton('Подорожі', callback_data='cat_Подорожі'),
+    )
     bot.send_message(
-        message.chat.id,
-        'Введіть суму та опис через пробіл (наприклад: 1500 Купівля деталей)',
+        message.chat.id, 'Оберіть категорію:', reply_markup=markup
     )
 
   elif message.text == '📊 Переглянути прибуток':
     finance_data = load_json('finance_data.json')
-    # Можеш змінити підрахунок під свою структуру даних, якщо потрібно
-    income = finance_data.get('income', 0.00)
-    expense = finance_data.get('expense', 0.00)
+    user_fin = finance_data.get(user_id, {})
+    income = user_fin.get('income', 0.00)
+    expense = user_fin.get('expense', 0.00)
     profit = income - expense
 
     text = (
@@ -106,8 +116,82 @@ def handle_message(message):
     bot.send_message(message.chat.id, text)
 
   else:
-    bot.send_message(
-        message.chat.id, 'Скористайтесь кнопками меню нижче 👇'
+    # Перевіряємо, чи користувач вводить суму транзакції
+    if user_id in user_state and user_state[user_id].get('step') == 'waiting_amount':
+      data = user_state[user_id]
+      category = data['category']
+      op_type = data['type']  # '+' або '-'
+
+      parts = message.text.split(' ', 1)
+      try:
+        amount = float(parts[0])
+        description = parts[1] if len(parts) > 1 else 'Загальне'
+
+        # Зберігаємо у finance_data.json
+        finance_data = load_json('finance_data.json')
+        if user_id not in finance_data:
+          finance_data[user_id] = {'income': 0.0, 'expense': 0.0}
+
+        if op_type == '+':
+          finance_data[user_id]['income'] += amount
+          sign_str = f'+{amount:.2f}'
+        else:
+          finance_data[user_id]['expense'] += amount
+          sign_str = f'-{amount:.2f}'
+
+        save_json('finance_data.json', finance_data)
+
+        bot.send_message(
+            message.chat.id,
+            '✅ Успішно збережено!\n\n📂 '
+            f'{category} -> {description}\n📝 Додано з Telegram: {sign_str} грн',
+        )
+        del user_state[user_id]
+      except ValueError:
+        bot.send_message(
+            message.chat.id,
+            '⚠️ Будь ласка, введіть суму коректно (наприклад: 1500 Купівля'
+            ' деталей або просто 500)',
+        )
+    else:
+      bot.send_message(
+          message.chat.id, 'Скористайтесь кнопками меню нижче 👇'
+      )
+
+
+# 5. Обробка Inline-кнопок (категорії та типи операцій)
+@bot.callback_query_handler(func=lambda call: True)
+def callback_inline(call):
+  user_id = str(call.message.chat.id)
+
+  if call.data.startswith('cat_'):
+    category = call.data.split('_')[1]
+    user_state[user_id] = {'category': category}
+
+    # Показуємо кнопки вибору типу операції
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton('➕ Дохід (+)', callback_data='op_plus'),
+        types.InlineKeyboardButton('➖ Витрата (-)', callback_data='op_minus'),
+    )
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f'Менюшка: {category}\nОберіть тип операції:',
+        reply_markup=markup,
+    )
+
+  elif call.data.startswith('op_'):
+    op_type = '+' if call.data == 'op_plus' else '-'
+    if user_id in user_state:
+      user_state[user_id]['type'] = op_type
+      user_state[user_id]['step'] = 'waiting_amount'
+
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text='✍️ Введіть суму та опис через пробіл\nНаприклад: 1500 Купівля'
+        ' деталей або просто 500:',
     )
 
 
