@@ -30,6 +30,9 @@ keep_alive()
 TOKEN = '8996181218:AAELaCNDCti2hWlr0sFeSuZbZmLeLHCbfP4'
 bot = telebot.TeleBot(TOKEN)
 
+# Словник для збереження стану вибору користувача
+user_state = {}
+
 
 # Функції для роботи з JSON файлами
 def load_json(filename):
@@ -47,7 +50,7 @@ def save_json(filename, data):
     json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-# 3. Команда /start з інлайн-кнопками всередині повідомлення
+# 3. Головне меню з інлайн-кнопками
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
   markup = types.InlineKeyboardMarkup(row_width=1)
@@ -88,9 +91,77 @@ def callback_inline(call):
     )
 
   elif call.data == 'btn_add':
-    bot.send_message(
-        call.message.chat.id,
-        'Введіть суму та опис через пробіл\nНаприклад: 1500 Купівля деталей',
+    # Вибір головної групи (Машина, Крипта тощо)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton('🚗 Машина', callback_data='group_Машина'),
+        types.InlineKeyboardButton('🪙 Крипта', callback_data='group_Крипта'),
+        types.InlineKeyboardButton('💼 Бізнес', callback_data='group_Бізнес'),
+        types.InlineKeyboardButton('🛒 Покупки', callback_data='group_Покупки'),
+    )
+    markup.add(
+        types.InlineKeyboardButton('✈️ Подорожі', callback_data='group_Подорожі')
+    )
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text='📂 Оберіть головну групу:',
+        reply_markup=markup,
+    )
+
+  elif call.data.startswith('group_'):
+    group_name = call.data.split('_')[1]
+    user_state[user_id] = {'group': group_name}
+
+    # Вибір маленьких підгруп залежно від головної групи
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    if group_name == 'Машина':
+      markup.add(
+          types.InlineKeyboardButton(
+              '🛠️ Ремонт', callback_data='sub_Ремонт'
+          ),
+          types.InlineKeyboardButton(
+              '⛽ Пальне', callback_data='sub_Пальне'
+          ),
+          types.InlineKeyboardButton(
+              '📋 Загальне', callback_data='sub_Загальне'
+          ),
+      )
+    elif group_name == 'Крипта':
+      markup.add(
+          types.InlineKeyboardButton('📈 Покупка', callback_data='sub_Покупка'),
+          types.InlineKeyboardButton(
+              '📉 Продаж', callback_data='sub_Продаж'
+          ),
+      )
+    else:
+      markup.add(
+          types.InlineKeyboardButton(
+              '📋 Загальне', callback_data='sub_Загальне'
+          )
+      )
+
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f'📁 Група: {group_name}\nОберіть підгрупу:',
+        reply_markup=markup,
+    )
+
+  elif call.data.startswith('sub_'):
+    sub_name = call.data.split('_')[1]
+    if user_id in user_state:
+      user_state[user_id]['subgroup'] = sub_name
+      user_state[user_id]['step'] = 'waiting_amount'
+
+    group = user_state[user_id]['group']
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=(
+            f'📂 {group} -> {sub_name}\n\n✍️ Введіть суму та опис через пробіл'
+            ' (наприклад: 1500 Купівля деталей або просто 500):'
+        ),
     )
 
   elif call.data == 'btn_profit':
@@ -102,35 +173,53 @@ def callback_inline(call):
     )
 
 
-# 5. Обробка введення суми для транзакцій (якщо користувач просто пише текст)
+# 5. Обробка введення суми транзакції
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
   user_id = str(message.chat.id)
-  parts = message.text.split(' ', 1)
-  try:
-    amount = float(parts[0])
-    description = parts[1] if len(parts) > 1 else 'Загальне'
 
-    finance_data = load_json('finance_data.json')
-    trans_list = finance_data.get(user_id, [])
-    if not isinstance(trans_list, list):
-      trans_list = []
+  if user_id in user_state and user_state[user_id].get('step') == 'waiting_amount':
+    data = user_state[user_id]
+    group = data['group']
+    subgroup = data['subgroup']
 
-    trans_list.append({'amount': amount, 'description': description})
-    finance_data[user_id] = trans_list
-    save_json('finance_data.json', finance_data)
+    parts = message.text.split(' ', 1)
+    try:
+      amount = float(parts[0])
+      description = parts[1] if len(parts) > 1 else 'Загальне'
 
-    sign_str = f'+{amount:.2f}' if amount >= 0 else f'{amount:.2f}'
+      finance_data = load_json('finance_data.json')
+      trans_list = finance_data.get(user_id, [])
+      if not isinstance(trans_list, list):
+        trans_list = []
+
+      trans_list.append({
+          'group': group,
+          'subgroup': subgroup,
+          'amount': amount,
+          'description': description,
+      })
+      finance_data[user_id] = trans_list
+      save_json('finance_data.json', finance_data)
+
+      sign_str = f'+{amount:.2f}' if amount >= 0 else f'{amount:.2f}'
+      bot.send_message(
+          message.chat.id,
+          '✅ Успішно збережено!\n\n📂 '
+          f'{group} -> {subgroup} ({description})\n📝 Сума: {sign_str} грн',
+      )
+      del user_state[user_id]
+    except ValueError:
+      bot.send_message(
+          message.chat.id,
+          '⚠️ Будь ласка, введіть суму та опис коректно (наприклад: 1500 Купівля'
+          ' деталей або просто 500)',
+      )
+  else:
     bot.send_message(
         message.chat.id,
-        '✅ Успішно збережено!\n\n📂 Машина -> Загальне\n📝 Додано з'
-        f' Telegram: {sign_str} грн',
-    )
-  except ValueError:
-    bot.send_message(
-        message.chat.id,
-        '⚠️ Скористайтесь кнопками меню вище або введіть суму та опис через'
-        ' пробіл (наприклад: 1500 Купівля деталей)',
+        '⚠️ Скористайтесь інлайн-кнопками вище або натисніть /start для'
+        ' початку.',
     )
 
 
