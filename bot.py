@@ -2,8 +2,9 @@ import os
 import threading
 from flask import Flask
 import telebot
+from telebot import types
 
-# Налаштування міні-сервера для Render, щоб порт завжди був відкритим
+# 1. Міні-сервер для Render, щоб тримати порт відкритим
 app = Flask('')
 
 
@@ -21,29 +22,43 @@ def keep_alive():
   t.start()
 
 
-# Запускаємо веб-сервер у фоні
 keep_alive()
 
-# === СЮДИ ВСТАВ СВІЙ ТОКЕН БОТА ===
+# 2. Твій токен бота
 TOKEN = '8996181218:AAELaCNDCti2hWlr0sFeSuZbZmLeLHCbfP4'
 bot = telebot.TeleBot(TOKEN)
 
 
-# Обробка команди /start
+# 3. Головне меню з кнопками
 @bot.message_handler(commands=['start'])
-def send_welcome(bot_message):
-  bot.reply_to(
-      bot_message,
-      'Привіт! Бот успішно працює в хмарі на Render і готовий до роботи!',
+def send_welcome(message):
+  markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+  btn1 = types.KeyboardButton('🔑 Отримати код авторизації для ПК')
+  btn2 = types.KeyboardButton('➕ Додати транзакцію')
+  btn3 = types.KeyboardButton('📊 Переглянути прибуток')
+  markup.add(btn1, btn2, btn3)
+
+  bot.send_message(
+      message.chat.id,
+      '🚗 MCARS & FINANCE CONTROL BOT\n\nОберіть дію:',
+      reply_markup=markup,
   )
 
 
-# Обробка звичайних текстових повідомлень
+# 4. Обробка натискання на кнопки
 @bot.message_handler(func=lambda message: True)
-def echo_all(message):
-  bot.reply_to(message, f'Отримав твоє повідомлення: {message.text}')
+def handle_message(message):
+  if message.text == '🔑 Отримати код авторизації для ПК':
+    bot.send_message(message.chat.id, 'Тут буде генерація твого ключа для ПК.')
+  elif message.text == '➕ Додати транзакцію':
+    bot.send_message(message.chat.id, 'Введіть суму та опис через пробіл...')
+  elif message.text == '📊 Переглянути прибуток':
+    bot.send_message(message.chat.id, 'Ваш поточний прибуток...')
+  else:
+    bot.send_message(
+        message.chat.id, 'Скористайтесь кнопками меню нижче 👇'
+    )
 
 
-# Нескінченний цикл опитування Telegram
 if __name__ == '__main__':
   bot.infinity_polling()
